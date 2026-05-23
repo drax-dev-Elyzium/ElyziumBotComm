@@ -56,6 +56,7 @@ const client = new Client({
 client.commands = new Collection();
 
 const waitingForImage = new Map();
+const ulbImageWaiting = new Map();
 const dmsallPending = new Map();
 const giveawaySessions = new Map();
 const embedSessions = new Map();
@@ -529,7 +530,7 @@ function buildULBPreview(s) {
 }
 function buildULBStatus(s) {
   return new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Update Log Builder')
-    .setDescription([`**Game:** ${s.game || '*(not set)*'}`, `**Version:** ${s.version || '*(not set)*'}`, `**Patch:** \`${s.patchStatus}\``, `**Tier:** ${s.tier}`, `**Changes:** ${s.changes.length}`, `**Notes:** ${s.notes || '*(none)*'}`, `**Banner:** ${s.bannerUrl ? '✅' : '*(not set)*'}`, `**Screenshot:** ${s.screenshotUrl ? '✅' : '*(not set)*'}`, `**Channel:** ${s.channelId ? `<#${s.channelId}>` : '*(not set)*'}`, `**Ping Role:** ${s.pingRoleId ? `<@&${s.pingRoleId}>` : '*(none)*'}`].join('\n'))
+    .setDescription([`**Game:** ${s.game || '*(not set)*'}`, `**Version:** ${s.version || '*(not set)*'}`, `**Patch:** \`${s.patchStatus}\``, `**Tier:** ${s.tier}`, `**Changes:** ${s.changes.length}`, `**Notes:** ${s.notes || '*(none)*'}`, `**Banner:** ${s.bannerUrl ? '✅ Uploaded' : '*(not uploaded)*'}`, `**Screenshot:** ${s.screenshotUrl ? '✅ Uploaded' : '*(not uploaded)*'}`, `**Channel:** ${s.channelId ? `<#${s.channelId}>` : '*(current channel)*'}`, `**Ping Role:** ${s.pingRoleId ? `<@&${s.pingRoleId}>` : '*(none)*'}`].join('\n'))
     .setFooter({ text: 'Fill required fields then Send' });
 }
 function buildULBControls() {
@@ -545,16 +546,31 @@ const UPDATELOGBUILDER = {
   async execute(interaction) { updatelogSessions.set(interaction.user.id, emptyULBSession()); const s = updatelogSessions.get(interaction.user.id); await interaction.reply({ embeds: [buildULBStatus(s)], components: buildULBControls(), flags: MessageFlags.Ephemeral }); },
   async handleButton(interaction) {
     const action = interaction.customId.split(':')[1]; let s = updatelogSessions.get(interaction.user.id); if (!s) { s = emptyULBSession(); updatelogSessions.set(interaction.user.id, s); }
-    const modalMap = { setgame: ['Set Game', 'game', 'e.g. Wizard Alchemy', TextInputStyle.Short], setversion: ['Set Version', 'version', 'e.g. BETA', TextInputStyle.Short], setstatus: ['Set Patch Status', 'status', 'e.g. Released!!', TextInputStyle.Short], addchange: ['Add Change', 'change', 'Describe the change...', TextInputStyle.Paragraph], setnotes: ['Set Notes', 'notes', 'Additional notes...', TextInputStyle.Paragraph], setbanner: ['Set Banner URL', 'banner', 'https://...', TextInputStyle.Short], setscreenshot: ['Set Screenshot URL', 'screenshot', 'https://...', TextInputStyle.Short], setchannel: ['Set Channel', 'channel', 'Channel ID', TextInputStyle.Short], setping: ['Set Ping Role ID', 'pingrole', 'Role ID', TextInputStyle.Short] };
+    const modalMap = { setgame: ['Set Game', 'game', 'e.g. Wizard Alchemy', TextInputStyle.Short], setversion: ['Set Version', 'version', 'e.g. BETA', TextInputStyle.Short], setstatus: ['Set Patch Status', 'status', 'e.g. Released!!', TextInputStyle.Short], addchange: ['Add Change', 'change', 'Describe the change...', TextInputStyle.Paragraph], setnotes: ['Set Notes', 'notes', 'Additional notes...', TextInputStyle.Paragraph], setping: ['Set Ping Role ID', 'pingrole', 'Role ID', TextInputStyle.Short] };
     if (modalMap[action]) { const [title, inputId, placeholder, style] = modalMap[action]; return interaction.showModal(new ModalBuilder().setCustomId(`updatelogbuilder:modal:${action}`).setTitle(title).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(inputId).setLabel(title).setStyle(style).setPlaceholder(placeholder).setRequired(true)))); }
+    if (action === 'setbanner') {
+      ulbImageWaiting.set(interaction.user.id, { type: 'banner', channelId: interaction.channelId });
+      setTimeout(() => ulbImageWaiting.delete(interaction.user.id), 60000);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xffcc00).setTitle('🖼️ Upload Banner Image').setDescription('Send your **banner image** in this channel now.\n\n• Upload from phone gallery or PC\n• You have **60 seconds**\n• Just send it as a normal message').setFooter({ text: 'Waiting for your image...' })], flags: MessageFlags.Ephemeral });
+    }
+    if (action === 'setscreenshot') {
+      ulbImageWaiting.set(interaction.user.id, { type: 'screenshot', channelId: interaction.channelId });
+      setTimeout(() => ulbImageWaiting.delete(interaction.user.id), 60000);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xffcc00).setTitle('📷 Upload Screenshot Image').setDescription('Send your **screenshot image** in this channel now.\n\n• Upload from phone gallery or PC\n• You have **60 seconds**\n• Just send it as a normal message').setFooter({ text: 'Waiting for your image...' })], flags: MessageFlags.Ephemeral });
+    }
+    if (action === 'setchannel') {
+      const channels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText).first(25);
+      const options = channels.map(c => ({ label: `# ${c.name}`, value: c.id }));
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📢 Select Channel').setDescription('Choose where to send the update log.\nIf you skip, it sends in **this channel**.')], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('updatelogbuilder:channelselect').setPlaceholder('Select a channel...').addOptions(options))], flags: MessageFlags.Ephemeral });
+    }
     if (action === 'settier') return interaction.reply({ content: 'Select tier:', components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('updatelogbuilder:selecttier').setPlaceholder('Select tier...').addOptions([{ label: '👑 Premium Only', value: 'premium', description: 'PREMIUM VERSION ONLY' }, { label: '🌐 Free Only', value: 'free', description: 'FREE VERSION' }, { label: '🔓 Free & Premium', value: 'both', description: 'FREE & PREMIUM' }]))], flags: MessageFlags.Ephemeral });
     if (action === 'clearchanges') { s.changes = []; return interaction.update({ embeds: [buildULBStatus(s)], components: buildULBControls() }); }
     if (action === 'preview') { const embeds = [buildULBPreview(s)]; if (s.screenshotUrl) embeds.push(new EmbedBuilder().setColor(tierColorMap[s.tier] || 0x00cc66).setImage(s.screenshotUrl)); return interaction.reply({ content: '👁️ Preview:', embeds, flags: MessageFlags.Ephemeral }); }
     if (action === 'reset') { updatelogSessions.set(interaction.user.id, emptyULBSession()); return interaction.update({ embeds: [buildULBStatus(updatelogSessions.get(interaction.user.id))], components: buildULBControls() }); }
     if (action === 'send') {
       if (!s.game || !s.version) return interaction.reply({ content: '❌ Game and Version required.', flags: MessageFlags.Ephemeral });
-      if (!s.channelId) return interaction.reply({ content: '❌ Set a channel first.', flags: MessageFlags.Ephemeral });
-      const ch = await interaction.guild.channels.fetch(s.channelId).catch(() => null); if (!ch) return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
+      const ch = s.channelId ? await interaction.guild.channels.fetch(s.channelId).catch(() => null) : interaction.channel;
+      if (!ch) return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
       const embeds = [buildULBPreview(s)]; if (s.screenshotUrl) embeds.push(new EmbedBuilder().setColor(tierColorMap[s.tier] || 0x00cc66).setImage(s.screenshotUrl));
       await ch.send({ content: s.pingRoleId ? `<@&${s.pingRoleId}>` : undefined, embeds }); updatelogSessions.delete(interaction.user.id);
       return interaction.update({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Sent!').setDescription(`Posted in ${ch}.`)], components: [] });
@@ -563,6 +579,7 @@ const UPDATELOGBUILDER = {
   async handleSelect(interaction) {
     const action = interaction.customId.split(':')[1]; let s = updatelogSessions.get(interaction.user.id); if (!s) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
     if (action === 'selecttier') { s.tier = interaction.values[0]; return interaction.update({ embeds: [buildULBStatus(s)], components: buildULBControls() }); }
+    if (action === 'channelselect') { s.channelId = interaction.values[0]; return interaction.update({ embeds: [buildULBStatus(s)], components: buildULBControls() }); }
   },
   async handleModal(interaction) {
     const action = interaction.customId.split(':')[2]; let s = updatelogSessions.get(interaction.user.id); if (!s) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
@@ -571,10 +588,7 @@ const UPDATELOGBUILDER = {
     if (action === 'setstatus') s.patchStatus = interaction.fields.getTextInputValue('status');
     if (action === 'addchange') interaction.fields.getTextInputValue('change').split('\n').map(l => l.trim()).filter(Boolean).forEach(l => s.changes.push(l));
     if (action === 'setnotes') s.notes = interaction.fields.getTextInputValue('notes');
-    if (action === 'setbanner') s.bannerUrl = interaction.fields.getTextInputValue('banner');
-    if (action === 'setscreenshot') s.screenshotUrl = interaction.fields.getTextInputValue('screenshot');
     if (action === 'setping') s.pingRoleId = interaction.fields.getTextInputValue('pingrole').replace(/[<@&>]/g, '');
-    if (action === 'setchannel') { const ch = await interaction.guild.channels.fetch(interaction.fields.getTextInputValue('channel').replace(/[<#>]/g, '')).catch(() => null); if (ch) s.channelId = ch.id; else return interaction.reply({ content: '❌ Invalid channel.', flags: MessageFlags.Ephemeral }); }
     await interaction.update({ embeds: [buildULBStatus(s)], components: buildULBControls() });
   },
 };
@@ -582,22 +596,27 @@ const UPDATELOGBUILDER = {
 function emptyEBSession(userId) { return { userId, title: null, description: null, color: 0x5865f2, footer: null, imageUrl: null, thumbnailUrl: null, author: null, fields: [], timestamp: false, channelId: null }; }
 function buildEBPreview(s) { const e = new EmbedBuilder().setColor(s.color); if (s.title) e.setTitle(s.title); if (s.description) e.setDescription(s.description); if (s.footer) e.setFooter({ text: s.footer }); if (s.imageUrl) e.setImage(s.imageUrl); if (s.thumbnailUrl) e.setThumbnail(s.thumbnailUrl); if (s.author) e.setAuthor({ name: s.author }); if (s.timestamp) e.setTimestamp(); for (const f of s.fields) e.addFields(f); return e; }
 function buildEBStatus(s) { return new EmbedBuilder().setColor(0x5865f2).setTitle('🛠️ Embed Builder').setDescription([`**Title:** ${s.title || '*(not set)*'}`, `**Description:** ${s.description ? s.description.slice(0, 50) + '...' : '*(not set)*'}`, `**Color:** \`#${s.color.toString(16).padStart(6, '0')}\``, `**Footer:** ${s.footer || '*(not set)*'}`, `**Author:** ${s.author || '*(not set)*'}`, `**Image:** ${s.imageUrl ? '✅' : '*(not set)*'}`, `**Thumbnail:** ${s.thumbnailUrl ? '✅' : '*(not set)*'}`, `**Fields:** ${s.fields.length}`, `**Timestamp:** ${s.timestamp ? '✅' : 'No'}`, `**Channel:** ${s.channelId ? `<#${s.channelId}>` : '*(not set)*'}`].join('\n')).setFooter({ text: 'Use buttons to edit' }); }
-function buildEBControls(s) { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:settitle').setLabel('📝 Title').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setdesc').setLabel('📄 Description').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setcolor').setLabel('🎨 Color').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setfooter').setLabel('📎 Footer').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:setauthor').setLabel('✍️ Author').setStyle(ButtonStyle.Secondary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:setimage').setLabel('🖼️ Image').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:setthumbnail').setLabel('🖼️ Thumbnail').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:addfield').setLabel('➕ Field').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:togglets').setLabel(s.timestamp ? '🕐 TS: ON' : '🕐 TS: OFF').setStyle(s.timestamp ? ButtonStyle.Success : ButtonStyle.Secondary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:setchannel').setLabel('📢 Channel').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:preview').setLabel('👁️ Preview').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embedbuilder:send').setLabel('🚀 Send').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embedbuilder:reset').setLabel('🗑️ Reset').setStyle(ButtonStyle.Danger))]; }
+function buildEBControls(s) { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:settitle').setLabel('📝 Title').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setdesc').setLabel('📄 Description').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setcolor').setLabel('🎨 Color').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embedbuilder:setfooter').setLabel('📎 Footer').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:setauthor').setLabel('✍️ Author').setStyle(ButtonStyle.Secondary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:setimage').setLabel('🖼️ Image').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:setthumbnail').setLabel('🖼️ Thumbnail').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:addfield').setLabel('➕ Field').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:togglets').setLabel(s.timestamp ? '🕐 TS: ON' : '🕐 TS: OFF').setStyle(s.timestamp ? ButtonStyle.Success : ButtonStyle.Secondary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embedbuilder:setchannel').setLabel(`📢 Channel: ${s.channelId ? '✅ Selected' : 'Current Channel'}`).setStyle(s.channelId ? ButtonStyle.Success : ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embedbuilder:preview').setLabel('👁️ Preview').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embedbuilder:send').setLabel('🚀 Send').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embedbuilder:reset').setLabel('🗑️ Reset').setStyle(ButtonStyle.Danger))]; }
 
 const EMBEDBUILDER = {
   data: new SlashCommandBuilder().setName('embedbuilder').setDescription('Interactively build and send a custom embed'),
   async execute(interaction) { embedSessions.set(interaction.user.id, emptyEBSession(interaction.user.id)); const s = embedSessions.get(interaction.user.id); await interaction.reply({ embeds: [buildEBStatus(s)], components: buildEBControls(s), flags: MessageFlags.Ephemeral }); },
   async handleButton(interaction) {
     const action = interaction.customId.split(':')[1]; let s = embedSessions.get(interaction.user.id); if (!s) { s = emptyEBSession(interaction.user.id); embedSessions.set(interaction.user.id, s); }
-    const modalMap = { settitle: ['Set Title', 'title', 'Enter title...', TextInputStyle.Short], setdesc: ['Set Description', 'description', 'Enter description...', TextInputStyle.Paragraph], setcolor: ['Set Color', 'color', '#ff6bff', TextInputStyle.Short], setfooter: ['Set Footer', 'footer', 'Footer text...', TextInputStyle.Short], setauthor: ['Set Author', 'author', 'Author name...', TextInputStyle.Short], setimage: ['Set Image URL', 'image', 'https://...', TextInputStyle.Short], setthumbnail: ['Set Thumbnail URL', 'thumbnail', 'https://...', TextInputStyle.Short], addfield: ['Add Field', 'field', 'Name | Value | yes/no', TextInputStyle.Paragraph], setchannel: ['Set Channel', 'channel', 'Channel ID', TextInputStyle.Short] };
+    const modalMap = { settitle: ['Set Title', 'title', 'Enter title...', TextInputStyle.Short], setdesc: ['Set Description', 'description', 'Enter description...', TextInputStyle.Paragraph], setcolor: ['Set Color', 'color', '#ff6bff', TextInputStyle.Short], setfooter: ['Set Footer', 'footer', 'Footer text...', TextInputStyle.Short], setauthor: ['Set Author', 'author', 'Author name...', TextInputStyle.Short], setimage: ['Set Image URL', 'image', 'https://...', TextInputStyle.Short], setthumbnail: ['Set Thumbnail URL', 'thumbnail', 'https://...', TextInputStyle.Short], addfield: ['Add Field', 'field', 'Name | Value | yes/no', TextInputStyle.Paragraph] };
     if (modalMap[action]) { const [title, inputId, placeholder, style] = modalMap[action]; return interaction.showModal(new ModalBuilder().setCustomId(`embedbuilder:modal:${action}`).setTitle(title).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(inputId).setLabel(title).setStyle(style).setPlaceholder(placeholder).setRequired(true)))); }
+    if (action === 'setchannel') {
+      const channels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText).first(25);
+      const options = channels.map(c => ({ label: `# ${c.name}`, value: c.id }));
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📢 Select Channel').setDescription('Choose where to send the embed.\nIf you skip this, it will be sent in **this channel**.')], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embedbuilder:channelselect').setPlaceholder('Select a channel...').addOptions(options))], flags: MessageFlags.Ephemeral });
+    }
     if (action === 'togglets') { s.timestamp = !s.timestamp; return interaction.update({ embeds: [buildEBStatus(s)], components: buildEBControls(s) }); }
     if (action === 'preview') return interaction.reply({ content: '👁️ Preview:', embeds: [buildEBPreview(s)], flags: MessageFlags.Ephemeral });
     if (action === 'reset') { embedSessions.set(interaction.user.id, emptyEBSession(interaction.user.id)); const f = embedSessions.get(interaction.user.id); return interaction.update({ embeds: [buildEBStatus(f)], components: buildEBControls(f) }); }
     if (action === 'send') {
-      if (!s.channelId) return interaction.reply({ content: '❌ Set a channel first.', flags: MessageFlags.Ephemeral });
       if (!s.title && !s.description) return interaction.reply({ content: '❌ Add title or description.', flags: MessageFlags.Ephemeral });
-      const ch = await interaction.guild.channels.fetch(s.channelId).catch(() => null); if (!ch) return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
+      const ch = s.channelId ? await interaction.guild.channels.fetch(s.channelId).catch(() => null) : interaction.channel;
+      if (!ch) return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
       await ch.send({ embeds: [buildEBPreview(s)] }); embedSessions.delete(interaction.user.id);
       return interaction.update({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Embed Sent!').setDescription(`Sent to ${ch}.`)], components: [] });
     }
@@ -611,9 +630,16 @@ const EMBEDBUILDER = {
     if (action === 'setimage') s.imageUrl = interaction.fields.getTextInputValue('image');
     if (action === 'setthumbnail') s.thumbnailUrl = interaction.fields.getTextInputValue('thumbnail');
     if (action === 'setcolor') { const p = parseInt(interaction.fields.getTextInputValue('color').replace('#', ''), 16); if (!isNaN(p)) s.color = p; }
-    if (action === 'setchannel') { const ch = await interaction.guild.channels.fetch(interaction.fields.getTextInputValue('channel').replace(/[<#>]/g, '')).catch(() => null); if (ch) s.channelId = ch.id; else return interaction.reply({ content: '❌ Invalid channel.', flags: MessageFlags.Ephemeral }); }
     if (action === 'addfield') { const parts = interaction.fields.getTextInputValue('field').split('|').map(p => p.trim()); if (parts.length >= 2 && s.fields.length < 25) s.fields.push({ name: parts[0], value: parts[1], inline: parts[2]?.toLowerCase() === 'yes' }); }
     await interaction.update({ embeds: [buildEBStatus(s)], components: buildEBControls(s) });
+  },
+  async handleSelect(interaction) {
+    const action = interaction.customId.split(':')[1];
+    if (action === 'channelselect') {
+      let s = embedSessions.get(interaction.user.id); if (!s) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+      s.channelId = interaction.values[0];
+      return interaction.update({ embeds: [buildEBStatus(s)], components: buildEBControls(s) });
+    }
   },
 };
 
@@ -622,7 +648,7 @@ const GETSCRIPT = {
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const scripts = loadJSON('scripts.json', []);
-    if (scripts.length === 0) return interaction.editReply({ content: '❌ No scripts available. Use /setupgetscript to add some.' });
+    if (scripts.length === 0) return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff9900).setTitle('📭 No Scripts Available').setDescription('There are no scripts available right now.\nCheck back later or contact an admin to add scripts.').setFooter({ text: 'Use /setupgetscript to manage scripts' })] });
     await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📜 Script Library').setDescription(`**${scripts.length}** scripts available.`).setFooter({ text: 'Scripts are for educational purposes only.' })], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('getscript:select').setPlaceholder('📜 Select a script...').addOptions(scripts.map(s => ({ label: s.name, description: s.description, value: s.id }))))] });
   },
   async handleSelect(interaction) {
@@ -714,22 +740,29 @@ const SETUP = {
     if (!interaction.member.permissions.has('Administrator')) return interaction.editReply({ content: '❌ Administrators only.' });
     const commands = [...client.commands.keys()]; const currentSetup = getGuildSetup(interaction.guildId);
     const chunks = []; for (let i = 0; i < commands.length; i += 25) chunks.push(commands.slice(i, i + 25));
-    const rows = chunks.map(chunk => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setup:selectcmd').setPlaceholder('📋 Select command...').addOptions(chunk.map(cmd => ({ label: `/${cmd}`, description: currentSetup[cmd]?.length ? `🔒 ${currentSetup[cmd].length} role(s)` : '🌐 Everyone', value: cmd })))));
-    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('⚙️ Bot Setup').setDescription('Select a command to configure.\n\n🔒 **Restricted** — selected roles only\n🌐 **Open** — everyone\n\n> Changes apply instantly.').setFooter({ text: 'Administrator only' })], components: rows.slice(0, 5) });
+    const rows = chunks.map(chunk => new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setup:selectcmds').setPlaceholder('📋 Select commands to configure...').setMinValues(1).setMaxValues(chunk.length).addOptions(chunk.map(cmd => ({ label: `/${cmd}`, description: currentSetup[cmd]?.length ? `🔒 ${currentSetup[cmd].length} role(s)` : '🌐 Everyone', value: cmd })))));
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('⚙️ Bot Setup').setDescription('Select **one or more commands** to configure together.\n\n🔒 **Restricted** — selected roles only\n🌐 **Open** — everyone\n\n> Changes apply instantly.').setFooter({ text: 'Administrator only' })], components: rows.slice(0, 5) });
   },
   async handleSelect(interaction) {
     const part = interaction.customId.split(':')[1];
-    if (part === 'selectcmd') { const command = interaction.values[0]; const currentRoles = getGuildSetup(interaction.guildId)[command] || []; setupSessions.set(interaction.user.id, { command }); return interaction.update({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`⚙️ Configure /${command}`).setDescription(`**Currently:** ${currentRoles.length ? currentRoles.map(r => `<@&${r}>`).join(', ') : '🌐 Everyone'}\n\nSelect roles allowed to use this command.`)], components: [new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId('setup:selectroles').setPlaceholder(`Roles for /${command}`).setMinValues(0).setMaxValues(10)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:clearroles').setLabel('🌐 Open to Everyone').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId('setup:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] }); }
+    if (part === 'selectcmds') {
+      const commands = interaction.values;
+      const currentSetup = getGuildSetup(interaction.guildId);
+      setupSessions.set(interaction.user.id, { commands });
+      const desc = commands.map(cmd => { const roles = currentSetup[cmd] || []; return `**/${cmd}** — ${roles.length ? roles.map(r => `<@&${r}>`).join(', ') : '🌐 Everyone'}`; }).join('\n');
+      return interaction.update({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`⚙️ Configure ${commands.length} Command(s)`).setDescription(`**Selected:**\n${desc}\n\nNow select which roles can use ${commands.length > 1 ? 'all these commands' : 'this command'}.`)], components: [new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId('setup:selectroles').setPlaceholder('Select allowed roles...').setMinValues(0).setMaxValues(10)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setup:clearroles').setLabel('🌐 Open to Everyone').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId('setup:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] });
+    }
     if (part === 'selectroles') {
       const session = setupSessions.get(interaction.user.id); if (!session) return;
-      await interaction.deferUpdate(); setCommandRoles(interaction.guildId, session.command, interaction.values);
+      await interaction.deferUpdate();
+      for (const command of session.commands) setCommandRoles(interaction.guildId, command, interaction.values);
       await syncCommandPermissions(interaction.guildId, [...client.commands.values()]); setupSessions.delete(interaction.user.id);
-      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Updated').addFields({ name: 'Command', value: `/${session.command}`, inline: true }, { name: 'Roles', value: interaction.values.length ? interaction.values.map(r => `<@&${r}>`).join(', ') : 'Everyone' }).setDescription('Discord updated — command hidden from unauthorized users.').setTimestamp()], components: [] });
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Updated').addFields({ name: 'Commands', value: session.commands.map(c => `/${c}`).join(', '), inline: false }, { name: 'Roles', value: interaction.values.length ? interaction.values.map(r => `<@&${r}>`).join(', ') : 'Everyone' }).setDescription('Discord updated — commands hidden from unauthorized users.').setTimestamp()], components: [] });
     }
   },
   async handleButton(interaction) {
     const part = interaction.customId.split(':')[1];
-    if (part === 'clearroles') { const session = setupSessions.get(interaction.user.id); if (!session) return; await interaction.deferUpdate(); setCommandRoles(interaction.guildId, session.command, []); await syncCommandPermissions(interaction.guildId, [...client.commands.values()]); setupSessions.delete(interaction.user.id); await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Cleared').setDescription(`**/${session.command}** open to everyone.`).setTimestamp()], components: [] }); }
+    if (part === 'clearroles') { const session = setupSessions.get(interaction.user.id); if (!session) return; await interaction.deferUpdate(); for (const command of session.commands) setCommandRoles(interaction.guildId, command, []); await syncCommandPermissions(interaction.guildId, [...client.commands.values()]); setupSessions.delete(interaction.user.id); await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Cleared').setDescription(`**${session.commands.map(c => `/${c}`).join(', ')}** — open to everyone.`).setTimestamp()], components: [] }); }
     if (part === 'back') { setupSessions.delete(interaction.user.id); await SETUP.execute(Object.assign({}, interaction, { deferReply: async () => {}, editReply: async (d) => interaction.update(d) })); }
   },
 };
@@ -782,6 +815,25 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
+
+  const ulbSession = ulbImageWaiting.get(message.author.id);
+  if (ulbSession && ulbSession.channelId === message.channelId) {
+    const attachment = message.attachments.first();
+    if (attachment && attachment.contentType?.startsWith('image/')) {
+      ulbImageWaiting.delete(message.author.id);
+      const s = updatelogSessions.get(message.author.id);
+      if (s) {
+        if (ulbSession.type === 'banner') s.bannerUrl = attachment.url;
+        if (ulbSession.type === 'screenshot') s.screenshotUrl = attachment.url;
+      }
+      await message.delete().catch(() => {});
+      const label = ulbSession.type === 'banner' ? '🖼️ Banner' : '📷 Screenshot';
+      const msg = await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle(`✅ ${label} Saved!`).setImage(attachment.url).setTimestamp()] });
+      setTimeout(() => msg.delete().catch(() => {}), 10000);
+      return;
+    }
+  }
+
   const session = waitingForImage.get(message.author.id); if (!session) return; if (session.channelId !== message.channelId) return;
   const attachment = message.attachments.first(); if (!attachment || !attachment.contentType?.startsWith('image/')) return;
   waitingForImage.delete(message.author.id);
