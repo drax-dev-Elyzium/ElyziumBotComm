@@ -688,7 +688,14 @@ const SETUPGETSCRIPT = {
     if (action === 'edit') { if (scripts.length === 0) return interaction.reply({ content: '❌ No scripts.', flags: MessageFlags.Ephemeral }); return interaction.update({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('✏️ Select Script to Edit')], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setupgetscript:selectedit').setPlaceholder('Select script...').addOptions(scripts.map(s => ({ label: s.name, description: s.description.slice(0, 50), value: s.id })))), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] }); }
     if (action === 'delete') { if (scripts.length === 0) return interaction.reply({ content: '❌ No scripts.', flags: MessageFlags.Ephemeral }); return interaction.update({ embeds: [new EmbedBuilder().setColor(0xff3232).setTitle('🗑️ Select Script to Delete')], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('setupgetscript:selectdelete').setPlaceholder('Select script...').addOptions(scripts.map(s => ({ label: s.name, description: s.description.slice(0, 50), value: s.id })))), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] }); }
     if (action === 'back') { const f = loadJSON('scripts.json', []); return interaction.update({ embeds: [buildSGSMain(f)], components: buildSGSRows(f) }); }
-    if (action === 'confirmdelete') { const id = scriptSessions.get(interaction.user.id + ':del'); if (!id) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral }); saveJSON('scripts.json', scripts.filter(s => s.id !== id)); scriptSessions.delete(interaction.user.id + ':del'); return interaction.update({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Deleted')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] }); }
+    if (action === 'confirmdelete') {
+      const id = scriptSessions.get(interaction.user.id + ':del');
+      if (!id) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+      saveJSON('scripts.json', scripts.filter(s => s.id !== id));
+      scriptSessions.delete(interaction.user.id + ':del');
+      await refreshScriptPanel(interaction.guild).catch(() => {});
+      return interaction.update({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Deleted')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))] });
+    }
     if (action === 'canceldelete') { scriptSessions.delete(interaction.user.id + ':del'); const f = loadJSON('scripts.json', []); return interaction.update({ embeds: [buildSGSMain(f)], components: buildSGSRows(f) }); }
   },
   async handleSelect(interaction) {
@@ -698,8 +705,26 @@ const SETUPGETSCRIPT = {
   },
   async handleModal(interaction) {
     const action = interaction.customId.split(':')[2]; const scripts = loadJSON('scripts.json', []);
-    if (action === 'add') { const name = interaction.fields.getTextInputValue('name'); const description = interaction.fields.getTextInputValue('description'); const code = interaction.fields.getTextInputValue('code'); scripts.push({ id: genScriptId(), name, description, code }); saveJSON('scripts.json', scripts); return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Script Added').addFields({ name: 'Name', value: name, inline: true }, { name: 'Description', value: description, inline: true }, { name: 'Preview', value: `\`\`\`lua\n${code.slice(0, 300)}\n\`\`\`` }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral }); }
-    if (action === 'edit') { const id = scriptSessions.get(interaction.user.id + ':edit'); if (!id) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral }); const idx = scripts.findIndex(s => s.id === id); if (idx === -1) return interaction.reply({ content: '❌ Not found.', flags: MessageFlags.Ephemeral }); scripts[idx] = { ...scripts[idx], name: interaction.fields.getTextInputValue('name'), description: interaction.fields.getTextInputValue('description'), code: interaction.fields.getTextInputValue('code') }; saveJSON('scripts.json', scripts); scriptSessions.delete(interaction.user.id + ':edit'); return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Script Updated')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral }); }
+    if (action === 'add') {
+      const name = interaction.fields.getTextInputValue('name');
+      const description = interaction.fields.getTextInputValue('description');
+      const code = interaction.fields.getTextInputValue('code');
+      scripts.push({ id: genScriptId(), name, description, code });
+      saveJSON('scripts.json', scripts);
+      await refreshScriptPanel(interaction.guild).catch(() => {});
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Script Added').addFields({ name: 'Name', value: name, inline: true }, { name: 'Description', value: description, inline: true }, { name: 'Preview', value: `\`\`\`lua\n${code.slice(0, 300)}\n\`\`\`` }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
+    }
+    if (action === 'edit') {
+      const id = scriptSessions.get(interaction.user.id + ':edit');
+      if (!id) return interaction.reply({ content: '❌ Session expired.', flags: MessageFlags.Ephemeral });
+      const idx = scripts.findIndex(s => s.id === id);
+      if (idx === -1) return interaction.reply({ content: '❌ Not found.', flags: MessageFlags.Ephemeral });
+      scripts[idx] = { ...scripts[idx], name: interaction.fields.getTextInputValue('name'), description: interaction.fields.getTextInputValue('description'), code: interaction.fields.getTextInputValue('code') };
+      saveJSON('scripts.json', scripts);
+      scriptSessions.delete(interaction.user.id + ':edit');
+      await refreshScriptPanel(interaction.guild).catch(() => {});
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Script Updated')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupgetscript:back').setLabel('◀️ Back').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
+    }
   },
 };
 
@@ -767,7 +792,105 @@ const SETUP = {
   },
 };
 
-const allCommands = [BAN, KICK, TIMEOUT, WARN, WARNINGS, UNBAN, PURGE, SLOWMODE, LOCK, USERINFO, SERVERINFO, AVATAR, BOTINFO, DMSALL, GIVEAWAY, TICKET, UPDATELOG, UPDATELOGBUILDER, EMBEDBUILDER, GETSCRIPT, SETUPGETSCRIPT, SETUPWELCOME, SETUP];
+async function refreshScriptPanel(guild) {
+  const cfg = loadJSON('scriptpanel.json', {})[guild.id];
+  if (!cfg) return;
+  const channel = await guild.channels.fetch(cfg.channelId).catch(() => null);
+  if (!channel) return;
+  const msg = await channel.messages.fetch(cfg.messageId).catch(() => null);
+  if (!msg) return;
+  const scripts = loadJSON('scripts.json', []);
+  if (scripts.length === 0) return;
+  const chunks = [];
+  for (let i = 0; i < scripts.length; i += 25) chunks.push(scripts.slice(i, i + 25));
+  const rows = chunks.slice(0, 5).map((chunk, idx) =>
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`scriptpanel:select:${idx}`)
+        .setPlaceholder('📜 Choose a script to get it in your DMs...')
+        .addOptions(chunk.map(s => ({ label: s.name, description: s.description.slice(0, 50), value: s.id })))
+    )
+  );
+  await msg.edit({ components: rows }).catch(() => {});
+}
+
+const SETUPSCRIPTPANEL = {
+  data: new SlashCommandBuilder()
+    .setName('setupscriptpanel')
+    .setDescription('Setup a permanent script panel in a channel')
+    .setDefaultMemberPermissions('0')
+    .addChannelOption(o => o.setName('channel').setDescription('Channel to send the panel to').setRequired(true))
+    .addStringOption(o => o.setName('title').setDescription('Panel title').setRequired(true))
+    .addStringOption(o => o.setName('description').setDescription('Panel description').setRequired(true))
+    .addStringOption(o => o.setName('color').setDescription('Embed color e.g. #5865f2')),
+
+  async execute(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (!interaction.member.permissions.has('Administrator')) return interaction.editReply({ content: '❌ Administrators only.' });
+
+    const channel = interaction.options.getChannel('channel');
+    const title = interaction.options.getString('title');
+    const description = interaction.options.getString('description');
+    const color = parseInt((interaction.options.getString('color') || '#5865f2').replace('#', ''), 16) || 0x5865f2;
+    const scripts = loadJSON('scripts.json', []);
+
+    if (scripts.length === 0) return interaction.editReply({ content: '❌ No scripts available. Use /setupgetscript to add scripts first.' });
+
+    const chunks = [];
+    for (let i = 0; i < scripts.length; i += 25) chunks.push(scripts.slice(i, i + 25));
+
+    const rows = chunks.slice(0, 5).map((chunk, idx) =>
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`scriptpanel:select:${idx}`)
+          .setPlaceholder('📜 Choose a script to get it in your DMs...')
+          .addOptions(chunk.map(s => ({ label: s.name, description: s.description.slice(0, 50), value: s.id })))
+      )
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle(title)
+      .setDescription(description + '\n\n' + scripts.map((s, i) => `**${i + 1}.** ${s.name}\n> ${s.description}`).join('\n\n'))
+      .setFooter({ text: `${scripts.length} script(s) available • Select to receive in DMs` })
+      .setTimestamp();
+
+    const msg = await channel.send({ embeds: [embed], components: rows });
+
+    const data = loadJSON('scriptpanel.json', {});
+    data[interaction.guildId] = { channelId: channel.id, messageId: msg.id, color };
+    saveJSON('scriptpanel.json', data);
+
+    await interaction.editReply({ content: `✅ Script panel sent in ${channel}!\n\n> Tip: The panel updates automatically when you add/remove scripts via /setupgetscript.` });
+  },
+
+  async handleSelect(interaction) {
+    const scriptId = interaction.values[0];
+    const scripts = loadJSON('scripts.json', []);
+    const script = scripts.find(s => s.id === scriptId);
+
+    if (!script) return interaction.reply({ content: '❌ Script not found.', flags: MessageFlags.Ephemeral });
+
+    try {
+      await interaction.user.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x00cc66)
+            .setTitle(`📜 ${script.name}`)
+            .setDescription(script.description)
+            .addFields({ name: 'Script', value: `\`\`\`lua\n${script.code.slice(0, 3900)}\n\`\`\`` })
+            .setFooter({ text: `Sent from ${interaction.guild.name}` })
+            .setTimestamp(),
+        ],
+      });
+      await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00cc66).setTitle('✅ Script Sent!').setDescription(`**${script.name}** has been sent to your DMs!`).setFooter({ text: 'Check your DMs' })], flags: MessageFlags.Ephemeral });
+    } catch {
+      await interaction.reply({ content: '❌ Could not DM you. Please enable DMs from server members and try again.', flags: MessageFlags.Ephemeral });
+    }
+  },
+};
+
+const allCommands = [BAN, KICK, TIMEOUT, WARN, WARNINGS, UNBAN, PURGE, SLOWMODE, LOCK, USERINFO, SERVERINFO, AVATAR, BOTINFO, DMSALL, GIVEAWAY, TICKET, UPDATELOG, UPDATELOGBUILDER, EMBEDBUILDER, GETSCRIPT, SETUPGETSCRIPT, SETUPSCRIPTPANEL, SETUPWELCOME, SETUP];
 for (const cmd of allCommands) client.commands.set(cmd.data.name, cmd);
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -777,7 +900,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!hasPermission(interaction, interaction.commandName)) return interaction.reply({ content: '❌ No permission.', flags: MessageFlags.Ephemeral });
       await cmd.execute(interaction, client);
     }
-    if (interaction.isStringSelectMenu()) { const cmd = client.commands.get(interaction.customId.split(':')[0]); if (cmd?.handleSelect) await cmd.handleSelect(interaction, client); }
+    if (interaction.isStringSelectMenu()) {
+      const prefix = interaction.customId.split(':')[0];
+      const cmd = client.commands.get(prefix);
+      if (interaction.customId.startsWith('scriptpanel:select')) {
+        if (SETUPSCRIPTPANEL.handleSelect) await SETUPSCRIPTPANEL.handleSelect(interaction, client);
+        return;
+      }
+      if (cmd?.handleSelect) await cmd.handleSelect(interaction, client);
+    }
     if (interaction.isButton()) { const cmd = client.commands.get(interaction.customId.split(':')[0]); if (cmd?.handleButton) await cmd.handleButton(interaction, client); }
     if (interaction.isModalSubmit()) { const cmd = client.commands.get(interaction.customId.split(':')[0]); if (cmd?.handleModal) await cmd.handleModal(interaction, client); }
     if (interaction.isRoleSelectMenu()) { const cmd = client.commands.get(interaction.customId.split(':')[0]); if (cmd?.handleSelect) await cmd.handleSelect(interaction, client); }
